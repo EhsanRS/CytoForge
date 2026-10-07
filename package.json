@@ -1,0 +1,93 @@
+{
+  "name": "cytoforge-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CytoForge cytometry workbench",
+  "desktopName": "CytoForge.desktop",
+  "author": "CytoForge contributors",
+  "main": "desktop/main.cjs",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "dev": "npm run build && electron .",
+    "dev:browser": "node tools/dev.mjs",
+    "preview:desktop": "node tools/progress-preview.mjs",
+    "build": "node tools/build_icons.mjs && npm run build --workspace frontend",
+    "typecheck": "npm run typecheck --workspace frontend",
+    "desktop": "electron .",
+    "setup:desktop": "install-electron",
+    "test:e2e": "playwright test",
+    "package:desktop": "npm run build && electron-builder",
+    "build:windows": "node tools/windows/build.mjs"
+  },
+  "build": {
+    "afterPack": "./tools/after_pack.cjs",
+    "appId": "org.cytoforge.desktop",
+    "productName": "CytoForge",
+    "icon": "desktop/assets/icon.png",
+    "directories": {
+      "output": "artifacts/installers"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "frontend/dist",
+        "to": "frontend"
+      },
+      {
+        "from": "artifacts/engine/cytoforge-engine",
+        "to": "engine",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "linux": {
+      "syncDesktopName": true,
+      "target": [
+        "AppImage",
+        "dir"
+      ],
+      "category": "Science"
+    },
+    "appImage": {
+      "executableArgs": []
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.medical"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "CytoForge-${version}-windows-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "CytoForge-${version}-windows-${arch}-portable.${ext}"
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "prettier": "^3.9.9"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

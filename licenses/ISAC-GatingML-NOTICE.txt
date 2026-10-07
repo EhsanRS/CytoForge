@@ -1,0 +1,16 @@
+The unmodified GatingML schemas in backend/cytoforge/resources/gatingml contain
+this original notice:
+
+Copyright (c) 2008-2014 ISAC (International Society for Advancement of Cytometry)
+Free of charge distribution and read-only usage permited. Modification and all other rights
+reserved. For all other uses please contact ISAC.
+
+The ISAC reference fixture files under tests/fixtures/interchange/gatingml are
+also distributed unchanged. Their embedded notices and the primary source
+repository are recorded in tests/fixtures/interchange/README.md.
+
+Standard and original distribution:
+https://sourceforge.net/projects/flowcyt/files/Gating-ML/Gating-ML%202.0/
+
+Primary specification publication:
+https://pmc.ncbi.nlm.nih.gov/articles/PMC4874733/

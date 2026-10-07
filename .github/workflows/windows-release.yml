@@ -1,0 +1,82 @@
+name: Windows desktop preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install local tools and build checked native Windows installers
+        shell: cmd
+        run: |
+          call Start-CytoForge.cmd --dev-tools
+          if errorlevel 1 exit /b 1
+          .local\tools\node\node.exe tools\windows\build.mjs
+      - name: Store Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: CytoForge-Windows-x64
+          path: |
+            artifacts/installers/*.exe
+            artifacts/installers/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Store validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-validation
+          path: |
+            artifacts/pytest-windows-full.xml
+            artifacts/windows-build-validation.json
+            artifacts/engine-smoke.json
+            artifacts/desktop-smoke.json
+            artifacts/desktop-plot-windows-smoke.json
+            artifacts/screenshots/*.png
+            .cache/logs/windows-start.log
+
+  release:
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CytoForge-Windows-x64
+          path: installers
+      - name: Publish Windows preview release after native checks pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v0.1.0-preview.${{ github.run_number }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Windows 10/11 x64 desktop preview for Intel and AMD PCs.
+
+          Download the portable EXE to try CytoForge, or the setup EXE to install it.
+          Both include Electron, the interface and the native Python analysis engine.
+          Independent plot windows are included.
+
+          The Windows source regression, actual frozen engine workers, packaged desktop
+          and independent plot-window checks passed before publishing this release.
+          Preview builds are unsigned. Full FlowJo parity and external biological/
+          instrument reference validation remain unfinished.
+          NOTES
+          gh release create "$RELEASE_TAG" installers/*.exe installers/SHA256SUMS.txt \
+            --target "$RELEASE_COMMIT" --title "CytoForge Windows preview $RELEASE_TAG" \
+            --prerelease --notes-file release-notes.md

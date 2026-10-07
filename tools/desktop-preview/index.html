@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CytoForge · Live desktop</title>
+    <link rel="stylesheet" href="/viewer.css" />
+  </head>
+  <body>
+    <header>
+      <strong>CytoForge <span>Live desktop session</span></strong>
+      <p id="status" role="status">Connecting to the desktop app…</p>
+      <nav>
+        <select id="windows" aria-label="Desktop window" hidden>
+          <option value="">Desktop window</option>
+        </select>
+        <button id="choose" hidden>Choose files…</button>
+        <select id="exports" aria-label="Desktop exports">
+          <option value="">Desktop exports</option>
+        </select>
+        <a href="/app">Download Linux app</a>
+        <button id="fullscreen">Full screen</button>
+      </nav>
+    </header>
+    <main>
+      <canvas
+        id="desktop"
+        width="1540"
+        height="990"
+        tabindex="0"
+        aria-label="Live CytoForge desktop window. Click to control; use the keyboard to type."
+      ></canvas>
+    </main>
+    <input id="files" type="file" multiple hidden />
+    <footer>
+      Click the desktop to control it. The installed app opens in its own window
+      and works offline.
+    </footer>
+    <script type="module" src="/viewer.mjs"></script>
+  </body>
+</html>

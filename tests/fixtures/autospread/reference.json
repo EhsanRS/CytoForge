@@ -1,0 +1,18 @@
+{
+  "reference": "https://doi.org/10.1038/s41467-021-23126-8",
+  "section": "Sec26",
+  "equations": [
+    11,
+    12
+  ],
+  "oracle": "Independent implementation in base R, not FlowJo",
+  "r_version": "R version 4.5.2 (2025-10-31)",
+  "paper_sha256": "d9addd8380e8ff1bd71fdd5d63554cf15df65aa06b6db0fe9c67e98dcc284696",
+  "driver_sha256": "c386ebfd0ff91e068135b10cc7a3860c8e413561bc1cd6162f1c932152818571",
+  "biological_validation": false,
+  "closed_source_parity_verified": false,
+  "fixture_sha256": {
+    "controls.npz": "78e9a229a75043252893e9d4b9bd2563b052a5e386533330b462f0730934e3e3",
+    "truth.json": "53df68eabbfb3649b923cc6811b923787fb95cd3da99dbb0a63701142f191da7"
+  }
+}

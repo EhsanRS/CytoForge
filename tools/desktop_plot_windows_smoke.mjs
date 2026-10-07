@@ -226,7 +226,7 @@ try {
   await expect.poll(() => histogramCopy.isClosed()).toBe(true);
   await first.getByRole("button", { name: "CDF", exact: true }).click();
   await ready(first);
-  await first.locator(".graph-settings summary").click();
+  await first.locator(".graph-settings > summary").click();
   await first.getByLabel("Graph axis extent").selectOption("full");
   await first.getByLabel("Graph resolution").selectOption("64");
   await drag(first);
@@ -278,7 +278,7 @@ try {
     await expect.poll(async () => (await plotContext(second)).mode).toBe(mode);
     await ready(second);
     if (!(await second.getByLabel("Graph resolution").isVisible()))
-      await second.locator(".graph-settings summary").click();
+      await second.locator(".graph-settings > summary").click();
     await second.getByLabel("Graph resolution").selectOption("64");
     if (mode !== "contour")
       await second.getByLabel("Graph palette").selectOption("viridis");

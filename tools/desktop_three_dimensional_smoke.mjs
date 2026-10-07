@@ -508,7 +508,7 @@ try {
   evidence.checks.push(
     "65,553 original events cross binary chunk boundary into native renderer without sampling",
   );
-  await main.locator(".graph-settings summary").click();
+  await main.locator(".graph-settings > summary").click();
   await main.getByLabel("Graph marker limit").selectOption("1000");
   await main.getByLabel("3D all events", { exact: true }).uncheck();
   await ready(main);

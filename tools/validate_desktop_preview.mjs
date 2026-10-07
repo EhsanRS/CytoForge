@@ -367,7 +367,7 @@ try {
     "Viewer opens the native probability bands",
   );
   await ownedPlotWindow.locator('canvas[data-ready="true"]').waitFor();
-  await clickDesktop(ownedPlotWindow.locator(".graph-settings summary"));
+  await clickDesktop(ownedPlotWindow.locator(".graph-settings > summary"));
   await waitFor(
     async () =>
       ownedPlotWindow
@@ -522,7 +522,7 @@ try {
         .getAttribute("aria-pressed")) === "true",
     "Viewer returns to the native zebra view",
   );
-  await clickDesktop(ownedPlotWindow.locator(".graph-settings summary"));
+  await clickDesktop(ownedPlotWindow.locator(".graph-settings > summary"));
   await waitFor(
     async () =>
       !(await ownedPlotWindow

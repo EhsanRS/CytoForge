@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import multiprocessing as mp
 import os
 import shutil
@@ -23,7 +22,7 @@ from . import (
 from .analysis import atomic_json, input_hash, is_stale, run_analysis, validate_request
 from .biology import population_paths, preserve_table_populations, replacement_target
 from .compensation import assign_matrix
-from .fileio import mapped_array
+from .fileio import mapped_array, read_json, read_text
 from .models import (
     AnalysisRequest,
     AnalysisResult,
@@ -82,7 +81,7 @@ class JobManager:
             ):
                 continue
             try:
-                record = json.loads((directory / "state.json").read_text())
+                record = read_json(directory / "state.json")
                 if record["id"] != directory.name:
                     continue
                 if record["status"] in ACTIVE:
@@ -209,7 +208,7 @@ class JobManager:
                     record = self.records[identifier]
                     directory = self.directory / identifier
                     try:
-                        progress = json.loads((directory / "progress.json").read_text())
+                        progress = read_json(directory / "progress.json")
                         record.update(progress)
                     except (OSError, ValueError):
                         pass
@@ -222,9 +221,7 @@ class JobManager:
                         if process.exitcode != 0:
                             raise ValueError(f"Analysis worker exited with code {process.exitcode}")
                         if (directory / "error.json").exists():
-                            raise ValueError(
-                                json.loads((directory / "error.json").read_text())["error"]
-                            )
+                            raise ValueError(read_json(directory / "error.json")["error"])
                         self._result(record)
                         record.update(
                             status="succeeded",
@@ -288,9 +285,7 @@ class JobManager:
     def _result(self, record):
         platform = PLATFORMS.get(record["request"]["algorithm"])
         model = platform[1] if platform else AnalysisResult
-        return model.model_validate_json(
-            (self.directory / record["id"] / "result.json").read_text()
-        )
+        return model.model_validate_json(read_text(self.directory / record["id"] / "result.json"))
 
     def get(self, workspace: Workspace, identifier: str, full=True) -> dict:
         with self.lock:

@@ -1,5 +1,6 @@
 """File cleanup must work even when an exception retains the failing stack."""
 
+import errno
 import io
 import json
 import threading
@@ -12,6 +13,7 @@ import pytest
 from cytoforge import fileio, quality
 from cytoforge.analysis import atomic_json
 from cytoforge.imports import stream_csv, write_blocks
+from cytoforge.jobs import JobManager
 from cytoforge.models import Gate
 from cytoforge.science import Engine, save_array
 from test_quality import known_acquisition, persist
@@ -176,15 +178,133 @@ def test_failed_json_replacement_preserves_previous_file_and_cleans_temporary(
     assert len(calls) > 1 if windows_lock else len(calls) == 1
 
 
-def test_json_writers_publish_complete_documents_without_sharing_a_temporary(tmp_path):
+@pytest.mark.parametrize("winerror", [None, 5, 32, 33])
+def test_json_reader_retries_a_brief_sharing_violation(tmp_path, monkeypatch, winerror):
+    path = tmp_path / "progress.json"
+    atomic_json(path, {"stage": "Reading events", "progress": 0.25})
+    original_read, calls, sleeps = Path.read_text, [], []
+
+    def temporarily_busy(self, *args, **kwargs):
+        calls.append(self)
+        if len(calls) <= 2:
+            if winerror is None:
+                error = PermissionError(errno.EACCES, "Progress file is being replaced", str(self))
+            else:
+                error = PermissionError("Progress file is being replaced")
+                error.winerror = winerror
+            raise error
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", temporarily_busy)
+    monkeypatch.setattr(fileio.time, "sleep", sleeps.append)
+    assert fileio.read_json(path) == {"stage": "Reading events", "progress": 0.25}
+    assert calls == [path] * 3 and sleeps == [0.005, 0.01]
+
+
+def test_json_reader_propagates_persistent_denial_after_a_bounded_retry(tmp_path, monkeypatch):
+    path = tmp_path / "progress.json"
+    path.write_text('{"progress":0}')
+    error = PermissionError(errno.EACCES, "Read is denied", str(path))
+    clock, calls = [0.0], []
+
+    def deny_read(self, *args, **kwargs):
+        calls.append(self)
+        raise error
+
+    def advance(delay):
+        clock[0] += delay
+
+    monkeypatch.setattr(Path, "read_text", deny_read)
+    monkeypatch.setattr(fileio.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(fileio.time, "sleep", advance)
+    with pytest.raises(PermissionError) as caught:
+        fileio.read_json(path)
+    assert caught.value is error
+    assert len(calls) > 1 and clock[0] <= 1.0
+    assert path.read_bytes() == b'{"progress":0}'
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_json_reader_does_not_retry_missing_or_invalid_documents(tmp_path, monkeypatch, invalid):
+    path = tmp_path / "progress.json"
+    if invalid:
+        path.write_text('{"progress":')
+
+    def unexpected_retry(delay):
+        pytest.fail("Missing or malformed JSON must fail immediately")
+
+    monkeypatch.setattr(fileio.time, "sleep", unexpected_retry)
+    with pytest.raises(json.JSONDecodeError if invalid else FileNotFoundError):
+        fileio.read_json(path)
+
+
+def test_json_reader_does_not_retry_unrelated_permission_errors(tmp_path, monkeypatch):
+    path = tmp_path / "progress.json"
+    error = PermissionError(errno.EPERM, "Operation is not permitted", str(path))
+
+    def denied(self, *args, **kwargs):
+        raise error
+
+    def unexpected_retry(delay):
+        pytest.fail("An unrelated permission error must fail immediately")
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    monkeypatch.setattr(fileio.time, "sleep", unexpected_retry)
+    with pytest.raises(PermissionError) as caught:
+        fileio.read_json(path)
+    assert caught.value is error
+
+
+def test_job_recovery_does_not_drop_a_briefly_locked_state_document(store, monkeypatch):
+    identifier = "a" * 32
+    directory = store.root / "jobs" / identifier
+    directory.mkdir(parents=True)
+    path = directory / "state.json"
+    record = {"id": identifier, "status": "interrupted", "workspace_id": "b" * 32}
+    atomic_json(path, record)
+    original_read, calls, sleeps = Path.read_text, [], []
+
+    def temporarily_busy(self, *args, **kwargs):
+        if self == path:
+            calls.append(self)
+            if len(calls) == 1:
+                raise PermissionError(errno.EACCES, "Job state is being replaced", str(self))
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", temporarily_busy)
+    monkeypatch.setattr(fileio.time, "sleep", sleeps.append)
+    assert JobManager(store).records[identifier] == record
+    assert calls == [path, path] and sleeps == [0.005]
+
+
+@pytest.mark.parametrize("simulate_read_conflict", [False, True])
+def test_json_writers_publish_complete_documents_without_sharing_a_temporary(
+    tmp_path, monkeypatch, simulate_read_conflict
+):
     path = tmp_path / "progress.json"
     atomic_json(path, {"writer": -1, "sequence": -1})
     stop = threading.Event()
+    started = threading.Event()
+    observations = []
+    denied = []
+    original_read = Path.read_text
+
+    def temporarily_busy(self, *args, **kwargs):
+        if self == path and not denied:
+            denied.append(True)
+            # Python's Windows text opener can expose errno 13 without winerror.
+            raise PermissionError(errno.EACCES, "Progress file is being replaced", str(path))
+        return original_read(self, *args, **kwargs)
+
+    if simulate_read_conflict:
+        monkeypatch.setattr(Path, "read_text", temporarily_busy)
 
     def read():
+        started.set()
         while not stop.is_set():
-            value = json.loads(path.read_text())
+            value = fileio.read_json(path)
             assert set(value) == {"writer", "sequence"}
+            observations.append(value)
             stop.wait(0.001)
 
     def write(writer):
@@ -194,13 +314,16 @@ def test_json_writers_publish_complete_documents_without_sharing_a_temporary(tmp
     with ThreadPoolExecutor(max_workers=3) as executor:
         reader = executor.submit(read)
         try:
+            assert started.wait(timeout=10)
             writers = [executor.submit(write, writer) for writer in range(2)]
             for writer in writers:
                 writer.result(timeout=10)
         finally:
             stop.set()
         reader.result(timeout=10)
-    assert json.loads(path.read_text())["sequence"] == 19
+    assert observations
+    assert bool(denied) == simulate_read_conflict
+    assert fileio.read_json(path)["sequence"] == 19
     assert list(tmp_path.iterdir()) == [path]
 
 

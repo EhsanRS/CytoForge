@@ -1,5 +1,7 @@
 """Explicit lifetimes for owned array mappings and atomic file publication."""
 
+import errno
+import json
 import os
 import time
 from contextlib import contextmanager
@@ -40,6 +42,29 @@ def load_validated_array(path, validate):
         close_array(values)
         raise
     return values
+
+
+def read_text(path):
+    """Read UTF-8 text, allowing a brief replacement conflict to finish."""
+    deadline = time.monotonic() + 1.0
+    delay = 0.005
+    while True:
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError as exc:
+            # Windows' CRT text opener can report EACCES without a winerror.
+            if exc.errno != errno.EACCES and getattr(exc, "winerror", None) not in {5, 32, 33}:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, 0.1)
+
+
+def read_json(path):
+    """Read an atomically published JSON document without retrying invalid data."""
+    return json.loads(read_text(path))
 
 
 def replace_file(source, target):

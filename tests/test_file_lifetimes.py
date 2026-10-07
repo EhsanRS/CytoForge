@@ -73,6 +73,38 @@ def test_validated_mapping_remains_available_until_its_consumer_finishes(tmp_pat
     assert values._mmap.closed
 
 
+def test_windows_lock_guard_detects_a_mapping_retained_by_a_view(tmp_path, windows_mapping_locks):
+    path, replacement = tmp_path / "flags.npy", tmp_path / "replacement.npy"
+    np.save(path, np.arange(8).reshape(4, 2))
+    np.save(replacement, np.zeros((4, 2)))
+    values = np.load(path, mmap_mode="r", allow_pickle=False)
+    view = values[:, 0]
+    del values
+    try:
+        with pytest.raises(PermissionError, match="open mapping") as error:
+            replacement.replace(path)
+        assert error.value.winerror == 5
+        assert replacement.exists()
+    finally:
+        fileio.close_array(view)
+    replacement.replace(path)
+    np.testing.assert_array_equal(np.load(path, allow_pickle=False), np.zeros((4, 2)))
+
+
+def test_windows_lock_guard_does_not_retain_finished_mappings(tmp_path, windows_mapping_locks):
+    path, replacement = tmp_path / "flags.npy", tmp_path / "replacement.npy"
+    np.save(path, np.arange(8).reshape(4, 2))
+    np.save(replacement, np.zeros((4, 2)))
+
+    def copy_column():
+        values = np.load(path, mmap_mode="r", allow_pickle=False)
+        return np.array(values[:, 0], copy=True)
+
+    column = copy_column()
+    replacement.replace(path)
+    np.testing.assert_array_equal(column, np.arange(0, 8, 2))
+
+
 def test_disguised_npz_is_rejected_and_closed(tmp_path, monkeypatch):
     path = tmp_path / "events.npy"
     with path.open("wb") as handle:
@@ -213,7 +245,9 @@ def test_cancelled_block_writer_closes_the_suspended_decoder(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_cached_qc_masks_release_the_flag_mapping_before_replacement(store, monkeypatch):
+def test_cached_qc_masks_release_the_flag_mapping_before_replacement(
+    store, monkeypatch, windows_mapping_locks
+):
     doc, sample, _, request = known_acquisition(store)
     result, flags = quality.calculate(doc, request, Engine(store), "a" * 32)
     persist(store, doc, result, flags)

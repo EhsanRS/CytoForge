@@ -348,7 +348,9 @@ def test_actual_api_saves_af_controls_for_spreading_archive_and_undo(client, qc)
     )
 
 
-def test_median_qc_flag_corruption_rejected_with_warm_caches_and_atomic_save(client):
+def test_median_qc_flag_corruption_rejected_with_warm_caches_and_atomic_save(
+    client, windows_mapping_locks
+):
     store = client.app.state.store
     doc, request, engine, qc = median_controls(store, qc=True)
     engine.mask(

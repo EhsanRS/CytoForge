@@ -28,6 +28,7 @@ from . import quality
 from .acquired_gates import acquired_gate_copies
 from .analysis import atomic_json, watch_parent
 from .autospill_biex import biex_functions
+from .fileio import close_array
 from .models import Compensation, Gate, GateDimension, Id, Model, Name, Transform, Workspace, new_id
 from .science import Engine, polygon_mask, validate_matrix
 from .store import Store, now
@@ -285,12 +286,10 @@ def validate_request(workspace: Workspace, request: AutoSpillRequest):
     input_snapshot(workspace, request, check_qc=True)
 
 
-def verify_qc_data(workspace, request, store, engine=None):
+def verify_qc_data(workspace, request, store):
     for identifier in input_snapshot(workspace, request).get("qc", {}):
         result = next(q for q in workspace.quality_results if q.id == identifier)
-        values = quality.load_data(store, workspace.id, result)
-        if engine is not None:
-            engine.cache.put((workspace.id, "quality", result.id, result.data.sha256), values)
+        close_array(quality.load_data(store, workspace.id, result))
 
 
 def verify_control_data(workspace, request, store):
@@ -636,7 +635,7 @@ def refine(data, initial, request, progress=lambda *_: None):
 
 def calculate(workspace, request, engine, identifier=None, progress=lambda *_: None):
     snapshot = input_snapshot(workspace, request, check_qc=True)
-    verify_qc_data(workspace, request, engine.store, engine)
+    verify_qc_data(workspace, request, engine.store)
     controls = ordered_controls(request)
     af_sources = set(autofluorescence_outputs(request))
     data, diagnostics, warnings, selected_ids = [], [], [], []

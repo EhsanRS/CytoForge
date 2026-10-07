@@ -317,7 +317,9 @@ def test_reviewed_qc_inside_ratio_parent_is_captured_and_reusable(store, kind, c
 
 
 @pytest.mark.parametrize("operation", ["calculate", "preview", "verify"])
-def test_qc_flag_corruption_is_rejected_even_with_warm_mask_cache(store, operation):
+def test_qc_flag_corruption_is_rejected_even_with_warm_mask_cache(
+    store, operation, windows_mapping_locks
+):
     doc, request, engine = controls(store)
     qc, gate, flags, _ = reviewed_qc(doc, request, engine)
     result = autospill.calculate(doc, request, engine)

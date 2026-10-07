@@ -1,3 +1,6 @@
+import errno
+import os
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -48,6 +51,34 @@ def dataset(store):
     sample.sha256 = save_events(store.data_path(doc.id, sample.id), values)
     doc = store.create(doc)
     return doc, doc.samples[0], values, Engine(store)
+
+
+@pytest.fixture
+def windows_mapping_locks(monkeypatch):
+    """Reject replacement while a real mapping is alive, including on Linux."""
+    mappings = {}
+    original_load, original_replace = np.load, os.replace
+
+    def load(*args, **kwargs):
+        values = original_load(*args, **kwargs)
+        if isinstance(values, np.memmap):
+            path = Path(values.filename).resolve()
+            mappings.setdefault(path, []).append(weakref.ref(values._mmap))
+        return values
+
+    def replace(source, target, *args, **kwargs):
+        for reference in mappings.get(Path(target).resolve(), []):
+            mapping = reference()
+            if mapping is not None and not mapping.closed:
+                error = PermissionError(
+                    errno.EACCES, "Windows cannot replace a file with an open mapping", str(target)
+                )
+                error.winerror = 5
+                raise error
+        return original_replace(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(np, "load", load)
+    monkeypatch.setattr(os, "replace", replace)
 
 
 @pytest.fixture

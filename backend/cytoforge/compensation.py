@@ -15,6 +15,7 @@ from pydantic import Field, model_validator
 from . import quality
 from .acquired_gates import acquired_gate_copies
 from .autofluorescence import reference_review
+from .fileio import close_array
 from .models import (
     Channel,
     Compensation,
@@ -191,8 +192,7 @@ def calculate_controls(workspace: Workspace, request: ControlCalculation, engine
                     raise ValueError(f"{label}: QC population is stale; review current QC first")
                 if any(index >= len(result.bins) for index in gate.quality_excluded_bins):
                     raise ValueError(f"{label}: QC exclusion references a missing acquisition bin")
-                values = quality.load_data(engine.store, workspace.id, result)
-                engine.cache.put((workspace.id, "quality", result.id, result.data.sha256), values)
+                close_array(quality.load_data(engine.store, workspace.id, result))
                 quality_inputs[result.id] = dict(
                     id=result.id, input_hash=result.input_hash, data=result.data.model_dump()
                 )
@@ -464,7 +464,7 @@ def save_control_populations(workspace, matrix, store):
             or result.data.model_dump() != snapshot["data"]
         ):
             raise ValueError("Reviewed QC data changed; recalculate before saving populations")
-        quality.load_data(store, workspace.id, result)
+        close_array(quality.load_data(store, workspace.id, result))
     append, parent, created = acquired_gate_copies(
         workspace, matrix.name, dict(control_matrix_id=matrix.id)
     )

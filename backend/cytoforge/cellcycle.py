@@ -25,6 +25,7 @@ from scipy.special import ndtr, ndtri, softmax
 
 from .analysis import _sample_signature, atomic_json, watch_parent
 from .biology import output_columns
+from .fileio import load_validated_array
 from .models import (
     CellCycleData,
     CellCycleFit,
@@ -721,7 +722,10 @@ def load_data(store, workspace_id, result, data):
         digest = hashlib.file_digest(handle, "sha256").hexdigest()
     if digest != data.sha256:
         raise ValueError("Cell-cycle event probabilities failed their integrity check")
-    values = np.load(path, mmap_mode="r", allow_pickle=False)
+    return load_validated_array(path, lambda values: validate_data(result, data, values))
+
+
+def validate_data(result, data, values):
     if values.shape != (data.event_count, 4) or values.dtype != np.float32:
         raise ValueError("Invalid event-aligned cell-cycle probabilities")
     fitted = np.all(np.isfinite(values), axis=1)
@@ -745,7 +749,6 @@ def load_data(store, workspace_id, result, data):
         subset[:, :3].sum(axis=0, dtype=np.float64), fit.expected_counts, rtol=1e-6, atol=0.01
     ):
         raise ValueError("Cell-cycle phase counts do not match their original events")
-    return values
 
 
 def figure_svg(result, fit, sample_name, stale=False):

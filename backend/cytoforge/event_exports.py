@@ -28,6 +28,7 @@ from .concatenation import (
     source_matrix,
     validate_origins,
 )
+from .fileio import close_array, mapped_array
 from .models import (
     Channel,
     Compensation,
@@ -601,10 +602,9 @@ def restore_origins(path, sample, envelope, check=lambda: None):
     if not {"CF_Source", "CF_EventID"} <= set(names):
         raise ValueError("Scientific merged FCS export is missing exact origin parameters")
     columns = [names.index("CF_Source"), names.index("CF_EventID")]
-    data = np.load(path, mmap_mode="r", allow_pickle=False)
     target = Path(path).with_suffix(".origins.npy")
     try:
-        with target.open("wb") as handle:
+        with mapped_array(path) as data, target.open("wb") as handle:
             handle.write(npy_header((sample.event_count, 2), "<u8"))
             for start in range(0, sample.event_count, CHUNK_EVENTS):
                 check()
@@ -620,7 +620,7 @@ def restore_origins(path, sample, envelope, check=lambda: None):
                     )
                 handle.write(np.asarray(values, dtype="<u8").tobytes(order="C"))
         # Validate hashes, alignment, source counts, ranges and monotonic event IDs.
-        validate_origins(None, "", sample, target)
+        close_array(validate_origins(None, "", sample, target))
         return target
     except BaseException:
         target.unlink(missing_ok=True)

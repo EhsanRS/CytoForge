@@ -9,9 +9,11 @@ import threading
 import time
 from importlib.metadata import version
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 
+from .fileio import mapped_array, replace_file
 from .formulas import parse
 from .models import AnalysisData, AnalysisRequest, AnalysisResult, Workspace
 from .science import Engine, save_array, save_events
@@ -19,12 +21,15 @@ from .store import Store, now
 
 
 def atomic_json(path: Path, value: dict):
-    temp = path.with_suffix(".writing")
-    with temp.open("w", encoding="utf-8") as handle:
-        json.dump(value, handle, allow_nan=False, separators=(",", ":"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp, path)
+    temp = path.with_name(f"{path.name}.{uuid4().hex}.writing")
+    try:
+        with temp.open("x", encoding="utf-8") as handle:
+            json.dump(value, handle, allow_nan=False, separators=(",", ":"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        replace_file(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def input_hash(workspace: Workspace, request: AnalysisRequest) -> str:
@@ -243,17 +248,19 @@ def validate_result_data(store, workspace_id, result, data, values):
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
         if digest != data.fitted_ids_sha256:
             raise ValueError("Fitted event identities failed their integrity check")
-        identities = np.load(path, mmap_mode="r", allow_pickle=False)
-        if identities.shape != (data.fitted_count,) or identities.dtype.kind not in "iu":
-            raise ValueError("Invalid fitted event identities")
-        if len(identities) and (
-            identities[0] < 0
-            or identities[-1] >= data.event_count
-            or np.any(identities[1:] <= identities[:-1])
-        ):
-            raise ValueError("Fitted event identities must be unique, ordered and in this sample")
-        if not np.all(finite[identities]):
-            raise ValueError("Fitted event identities do not match the mapped analysis output")
+        with mapped_array(path) as identities:
+            if identities.shape != (data.fitted_count,) or identities.dtype.kind not in "iu":
+                raise ValueError("Invalid fitted event identities")
+            if len(identities) and (
+                identities[0] < 0
+                or identities[-1] >= data.event_count
+                or np.any(identities[1:] <= identities[:-1])
+            ):
+                raise ValueError(
+                    "Fitted event identities must be unique, ordered and in this sample"
+                )
+            if not np.all(finite[identities]):
+                raise ValueError("Fitted event identities do not match the mapped analysis output")
 
 
 def sample_indices(counts: list[int], maximum: int, mode: str, seed: int) -> list[np.ndarray]:

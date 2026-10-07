@@ -19,6 +19,7 @@ import numpy as np
 from scipy.stats import spearmanr
 
 from .analysis import _sample_signature, atomic_json, gate_signature, watch_parent
+from .fileio import load_validated_array
 from .models import (
     AnalysisInput,
     Gate,
@@ -471,9 +472,7 @@ def load_data(store: Store, workspace_id: str, result: QualityResult):
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
         if digest != result.data.sha256:
             raise ValueError("QC event data failed its integrity check")
-        values = np.load(path, mmap_mode="r", allow_pickle=False)
-        validate_data(result, values)
-        return values
+        return load_validated_array(path, lambda values: validate_data(result, values))
     except OSError as exc:
         raise ValueError(
             "QC event data is missing or unreadable. Restore its project archive."

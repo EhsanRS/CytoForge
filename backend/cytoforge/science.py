@@ -14,6 +14,7 @@ from flowutils import transforms
 from scipy import stats
 
 from .biex import biex_functions
+from .fileio import close_array
 from .formulas import evaluate
 from .graph_views import cdf_values, probability_view, resolved_options, sampled_points, smooth_grid
 from .models import Channel, Compensation, GateDimension, Sample, Transform, Workspace
@@ -548,13 +549,13 @@ class Engine:
             from .quality import load_data, selection
 
             result = next(q for q in workspace.quality_results if q.id == gate.quality_id)
-            data_key = (workspace.id, "quality", result.id, result.data.sha256)
-            values = self.cache.get(data_key)
-            if values is None:
-                values = self.cache.put(data_key, load_data(self.store, workspace.id, result))
-            result = selection(
-                values, gate.quality_excluded_bins, gate.quality_exclusions, gate.quality_keep
-            )
+            values = load_data(self.store, workspace.id, result)
+            try:
+                result = selection(
+                    values, gate.quality_excluded_bins, gate.quality_exclusions, gate.quality_keep
+                )
+            finally:
+                close_array(values)
         elif gate.kind == "boolean":
             operands = [self.mask(workspace, sample, value, compensated) for value in gate.operands]
             if gate.operand_complements:

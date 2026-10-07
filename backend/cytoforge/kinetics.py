@@ -17,6 +17,7 @@ from scipy.signal import find_peaks
 
 from .analysis import _sample_signature, atomic_json, watch_parent
 from .biology import output_columns
+from .fileio import load_validated_array
 from .models import (
     Gate,
     GateDimension,
@@ -606,9 +607,7 @@ def load_data(store, workspace_id, result, data):
         with path.open("rb") as handle:
             if hashlib.file_digest(handle, "sha256").hexdigest() != data.sha256:
                 raise ValueError("Kinetics event data failed its integrity check")
-        values = np.load(path, mmap_mode="r", allow_pickle=False)
-        validate_data(result, data, values)
-        return values
+        return load_validated_array(path, lambda values: validate_data(result, data, values))
     except OSError as exc:
         raise ValueError("Kinetics event data is missing; restore the project archive") from exc
 

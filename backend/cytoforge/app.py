@@ -47,6 +47,7 @@ from .autogating import AutoGateRequest
 from .autogating import preview as preview_automatic_gate
 from .compensation import ControlCalculation, assign_matrix, calculate_controls
 from .demo import create_demo
+from .fileio import close_array, mapped_array
 from .import_sessions import MAX_BATCH_BYTES, MAX_UPLOAD_BYTES, ImportSessions
 from .imports import ImportCancelled, stream_csv, stream_fcs
 from .interchange import (
@@ -3259,12 +3260,12 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                         digest = hashlib.file_digest(handle, "sha256").hexdigest()
                     if digest != sample.sha256:
                         raise ValueError(f"Integrity check failed for {sample.name}")
-                    values = np.load(target, mmap_mode="r", allow_pickle=False)
-                    if values.dtype.kind != "f" or values.shape != (
-                        sample.event_count,
-                        len(sample.acquisition_channels),
-                    ):
-                        raise ValueError(f"Invalid event data for {sample.name}")
+                    with mapped_array(target) as values:
+                        if values.dtype.kind != "f" or values.shape != (
+                            sample.event_count,
+                            len(sample.acquisition_channels),
+                        ):
+                            raise ValueError(f"Invalid event data for {sample.name}")
                     if sample.concatenation:
                         origin_target = store.origins_path(doc.id, sample.id)
                         paths.append(origin_target)
@@ -3273,7 +3274,7 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                             origin_target.open("wb") as dest,
                         ):
                             shutil.copyfileobj(source, dest, 1024 * 1024)
-                        concatenation.validate_origins(store, doc.id, sample)
+                        close_array(concatenation.validate_origins(store, doc.id, sample))
                 for result in doc.analyses:
                     for data in result.data:
                         target = store.analysis_path(doc.id, result.id, data.sample_id)
@@ -3287,12 +3288,6 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                             digest = hashlib.file_digest(handle, "sha256").hexdigest()
                         if digest != data.sha256:
                             raise ValueError("Analysis data failed its integrity check")
-                        values = np.load(target, mmap_mode="r", allow_pickle=False)
-                        if values.dtype.kind != "f" or values.shape != (
-                            data.event_count,
-                            len(result.columns),
-                        ):
-                            raise ValueError("Invalid event-aligned analysis data")
                         if data.fitted_ids_sha256:
                             fitted_target = store.fitted_ids_path(doc.id, result.id, data.sample_id)
                             paths.append(fitted_target)
@@ -3305,7 +3300,13 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                                 shutil.copyfileobj(source, dest, 1024 * 1024)
                         from .analysis import validate_result_data
 
-                        validate_result_data(store, doc.id, result, data, values)
+                        with mapped_array(target) as values:
+                            if values.dtype.kind != "f" or values.shape != (
+                                data.event_count,
+                                len(result.columns),
+                            ):
+                                raise ValueError("Invalid event-aligned analysis data")
+                            validate_result_data(store, doc.id, result, data, values)
                 for result in doc.quality_results:
                     target = store.quality_path(doc.id, result.id)
                     paths.append(target)
@@ -3314,7 +3315,7 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                         target.open("wb") as dest,
                     ):
                         shutil.copyfileobj(source, dest, 1024 * 1024)
-                    quality.load_data(store, doc.id, result)
+                    close_array(quality.load_data(store, doc.id, result))
                 for field, directory, module in (
                     ("cell_cycle_results", "cell-cycle", cellcycle),
                     ("proliferation_results", "proliferation", proliferation),
@@ -3331,7 +3332,7 @@ def create_app(data_dir: Path | None = None, frontend_dir: Path | None = None) -
                                 target.open("wb") as dest,
                             ):
                                 shutil.copyfileobj(source, dest, 1024 * 1024)
-                            module.load_data(store, doc.id, result, data)
+                            close_array(module.load_data(store, doc.id, result, data))
                 for result in doc.comparison_results:
                     entry = f"population-comparison/{result.id}.npz"
                     if archive.getinfo(entry).file_size > population_comparison.MAX_ARTIFACT_BYTES:

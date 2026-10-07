@@ -9,6 +9,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 
 import numpy as np
 
+from .fileio import load_validated_array
 from .formulas import parse
 
 PLATFORM_FIELDS = {
@@ -447,7 +448,12 @@ def load_probability_data(store, workspace_id, result, data, label, offset=0):
         digest = hashlib.file_digest(handle, "sha256").hexdigest()
     if digest != data.sha256:
         raise ValueError(f"{label} event probabilities failed their integrity check")
-    values = np.load(path, mmap_mode="r", allow_pickle=False)
+    return load_validated_array(
+        path, lambda values: validate_probability_data(result, data, values, label, offset)
+    )
+
+
+def validate_probability_data(result, data, values, label, offset):
     k = len(result.columns) - 1
     if values.shape != (data.event_count, k + 1) or values.dtype != np.float32:
         raise ValueError(f"Invalid event-aligned {label.lower()} probabilities")
@@ -478,7 +484,6 @@ def load_probability_data(store, workspace_id, result, data, label, offset=0):
         or (not np.allclose(expected, fit.expected_counts, rtol=1e-6, atol=0.01))
     ):
         raise ValueError(f"{label} population counts do not match their original events")
-    return values
 
 
 def histogram_figure(fit, title, subtitle, channel, labels, footer, logarithmic=False, stale=False):

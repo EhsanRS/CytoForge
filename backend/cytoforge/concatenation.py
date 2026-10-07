@@ -14,6 +14,7 @@ import numpy as np
 from pydantic import Field, model_validator
 
 from .analysis import atomic_json
+from .fileio import load_validated_array
 from .formulas import evaluate
 from .models import (
     Channel,
@@ -270,7 +271,11 @@ def validate_origins(store, workspace_id, sample, path=None):
     target = path or store.origins_path(workspace_id, sample.id)
     if digest(target) != provenance.origins_sha256:
         raise ValueError("Concatenation event origins failed their SHA-256 integrity check")
-    values = np.load(target, mmap_mode="r", allow_pickle=False)
+    return load_validated_array(target, lambda values: validate_origin_data(sample, values))
+
+
+def validate_origin_data(sample, values):
+    provenance = sample.concatenation
     if values.dtype != np.dtype("uint64") or values.shape != (sample.event_count, 2):
         raise ValueError("Invalid concatenation event origins")
     for source in provenance.sources:
@@ -285,7 +290,6 @@ def validate_origins(store, workspace_id, sample, path=None):
             ):
                 raise ValueError("Concatenation origins do not match the source event ranges")
             previous = rows[-1, 1]
-    return values
 
 
 class Sessions:

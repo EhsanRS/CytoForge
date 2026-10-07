@@ -23,6 +23,7 @@ from . import (
 from .analysis import atomic_json, input_hash, is_stale, run_analysis, validate_request
 from .biology import population_paths, preserve_table_populations, replacement_target
 from .compensation import assign_matrix
+from .fileio import mapped_array
 from .models import (
     AnalysisRequest,
     AnalysisResult,
@@ -489,29 +490,27 @@ class JobManager:
                     digest = hashlib.file_digest(handle, "sha256").hexdigest()
                 if digest != data.sha256:
                     raise ValueError("Analysis output failed its integrity check")
-                values = np.load(path, mmap_mode="r", allow_pickle=False)
-                if (
-                    values.shape != (data.event_count, len(result.columns))
-                    or values.dtype.kind != "f"
-                ):
-                    raise ValueError("Analysis output shape does not match event identities")
-                from .analysis import validate_result_data
+                with mapped_array(path) as values:
+                    if (
+                        values.shape != (data.event_count, len(result.columns))
+                        or values.dtype.kind != "f"
+                    ):
+                        raise ValueError("Analysis output shape does not match event identities")
+                    from .analysis import validate_result_data
 
-                validate_result_data(self.store, workspace_id, result, data, values)
+                    validate_result_data(self.store, workspace_id, result, data, values)
 
             pheno_memberships = {}
             if result.request.algorithm == "phenograph" and result.request.create_cluster_gates:
                 for data in result.data:
-                    values = np.load(
-                        self.store.analysis_path(workspace_id, result.id, data.sample_id),
-                        mmap_mode="r",
-                        allow_pickle=False,
-                    )
-                    pheno_memberships[data.sample_id] = [
-                        int(label)
-                        for label in np.unique(values[:, 0])
-                        if np.isfinite(label) and label > 0
-                    ]
+                    with mapped_array(
+                        self.store.analysis_path(workspace_id, result.id, data.sample_id)
+                    ) as values:
+                        pheno_memberships[data.sample_id] = [
+                            int(label)
+                            for label in np.unique(values[:, 0])
+                            if np.isfinite(label) and label > 0
+                        ]
                 if sum(map(len, pheno_memberships.values())) > 2000:
                     raise ValueError(
                         "This result would create more than 2,000 community gates; "

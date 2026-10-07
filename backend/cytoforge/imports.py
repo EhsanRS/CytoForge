@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 from collections.abc import Callable, Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -509,6 +510,9 @@ def write_blocks(path: Path, shape: tuple[int, int], blocks, progress=nothing, c
         pending.replace(path)
         return writer.digest.hexdigest(), nonfinite
     finally:
+        close = getattr(blocks, "close", None)
+        if close is not None:
+            close()
         pending.unlink(missing_ok=True)
 
 
@@ -621,15 +625,15 @@ def stream_csv(
     check: Check = nothing,
 ) -> list[ImportedDataset]:
     progress(stage="Counting CSV events", dataset_index=1, events_read=0, event_total=0)
-    rows = _csv_rows(path, None, check)
-    names = next(rows)
-    count = 0
-    for count, _ in enumerate(rows, 1):
-        if count * len(names) > MAX_VALUES:
-            raise ValueError("CSV exceeds the current 150-million-value import limit")
-        if count % 8192 == 0:
-            check()
-            progress(stage="Counting CSV events", events_read=count, event_total=0)
+    with closing(_csv_rows(path, None, check)) as rows:
+        names = next(rows)
+        count = 0
+        for count, _ in enumerate(rows, 1):
+            if count * len(names) > MAX_VALUES:
+                raise ValueError("CSV exceeds the current 150-million-value import limit")
+            if count % 8192 == 0:
+                check()
+                progress(stage="Counting CSV events", events_read=count, event_total=0)
     sample = Sample(
         name=name[:160],
         event_count=count,
@@ -645,20 +649,20 @@ def stream_csv(
     chunk_rows = max(1, min(8192, CHUNK_VALUES // len(names)))
 
     def blocks():
-        rows = _csv_rows(path, names, check)
-        next(rows)
-        batch = []
-        for row_number, row in rows:
-            try:
-                batch.append([float(v) for v in row])
-            except ValueError as exc:
-                raise ValueError(f"CSV row {row_number} contains a nonnumeric value") from exc
-            if len(batch) == chunk_rows:
-                check()
+        with closing(_csv_rows(path, names, check)) as rows:
+            next(rows)
+            batch = []
+            for row_number, row in rows:
+                try:
+                    batch.append([float(v) for v in row])
+                except ValueError as exc:
+                    raise ValueError(f"CSV row {row_number} contains a nonnumeric value") from exc
+                if len(batch) == chunk_rows:
+                    check()
+                    yield np.asarray(batch, dtype=np.float64)
+                    batch.clear()
+            if batch:
                 yield np.asarray(batch, dtype=np.float64)
-                batch.clear()
-        if batch:
-            yield np.asarray(batch, dtype=np.float64)
 
     try:
         progress(stage="Reading events", events_read=0, event_total=count)

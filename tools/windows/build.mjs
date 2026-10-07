@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractFile } from "@electron/asar";
+import { verifyDesktopArchive } from "./package_integrity.mjs";
 import {
   digest,
   runNative,
@@ -44,6 +44,7 @@ await run(tools.node, [
   "--test",
   "--experimental-test-isolation=none",
   "tools/test_windows_runtime.mjs",
+  "tools/test_windows_package.mjs",
 ]);
 await run(tools.uv, [
   "run",
@@ -96,16 +97,8 @@ const frontendFiles = await compare(
   path.join(root, "frontend/dist"),
   path.join(unpacked, "resources/frontend"),
 );
-const desktop = await inventory(path.join(root, "desktop"));
 const archive = path.join(unpacked, "resources/app.asar");
-for (const relative of Object.keys(desktop)) {
-  if (
-    !extractFile(archive, `desktop/${relative}`).equals(
-      await readFile(path.join(root, "desktop", relative)),
-    )
-  )
-    throw new Error(`Packaged desktop source differs: ${relative}`);
-}
+const desktopFiles = await verifyDesktopArchive(root, archive);
 const smoke = { CYTOFORGE_TEST_BINARY: binary };
 delete env.CYTOFORGE_TEST_NO_SANDBOX;
 await run(tools.node, ["tools/desktop_smoke.mjs"], smoke);
@@ -140,7 +133,7 @@ await writeFile(
       native_engine_sha256: await digest(engine),
       engine_files_matched: engineFiles,
       frontend_files_matched: frontendFiles,
-      desktop_files_matched: Object.keys(desktop).length,
+      desktop_files_matched: desktopFiles,
       source_regression: "artifacts/pytest-windows-full.xml",
       native_desktop: "artifacts/desktop-smoke.json",
       independent_plot_windows: "artifacts/desktop-plot-windows-smoke.json",
